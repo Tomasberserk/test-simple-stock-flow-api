@@ -1,53 +1,101 @@
-# test-simple-stock-flow-api
+# Simple Stock Flow — Backend API (Laravel 10 + Onion Architecture)
 
-> **Prueba técnica · Ficha ADSO 3413974**
-> Horario: de **9:00 a. m. a 3:00 p. m.** (15:00)
+Backend de Simple Stock Flow implementado en PHP 8.1+ y Laravel 10 bajo los principios estrictos de **Arquitectura Onion (Cebolla)** y desarrollo guiado por especificación (SDD).
 
-Este repositorio es el **backend** de *Simple Stock Flow*, en **PHP con Laravel**. **Empieza vacío a propósito**: se construye en el fork de cada aprendiz.
+---
 
-## Instrucciones
+## 🏛️ Estructura de la Arquitectura Onion
 
-Cada aprendiz debe **crear el fork** de los seis repositorios del proyecto y **resolver el proyecto
-con el spec planteado**.
+```text
+app/
+├── Domain/                    # Anillo 1: Núcleo Puro (Entidades, Value Objects, Excepciones)
+│   ├── Exception/             # BusinessRuleViolation y excepciones de dominio
+│   ├── Model/                 # Product, Sale, SaleItem, Category, User
+│   └── ValueObject/           # Money (BigDecimal scale 2), Quantity, IDs, Role, Username
+│
+├── Application/               # Anillo 2: Casos de Uso y Puertos
+│   ├── Ports/
+│   │   ├── Inbound/           # PlaceSale, ManageProducts, GetSales, GetSalesReport, Authenticate
+│   │   └── Outbound/          # ProductRepository, SaleRepository, CategoryRepository, etc.
+│   └── UseCase/               # Servicios de orquestación de aplicación
+│
+├── Infrastructure/            # Anillo 3: Adaptadores de Salida y Persistencia
+│   ├── Persistence/           # Repositorios Eloquent, Mappers, Modelos físicos
+│   ├── Security/              # BcryptPasswordHasher, JwtTokenGenerator
+│   ├── Storage/               # LocalFileStorage
+│   └── Time/                  # SystemClock
+│
+├── Presentation/              # Anillo 4: Adaptadores de Entrada HTTP
+│   └── Http/
+│       ├── Controllers/       # Auth, Product, Category, Sale, Report, Health
+│       └── Middleware/        # AuthenticateJwt, RequireRole
+│
+└── Bootstrap/                 # Composición Raíz (Artículo III de la Constitución)
+    └── PortBindingsServiceProvider.php
+```
 
-1. Hacer fork, a su cuenta de GitHub, de cada repositorio de la tabla del final.
-2. Leer el spec en [`test-simple-stock-flow-docs`](https://github.com/code-sena/test-simple-stock-flow-docs).
-   Se entrega en dos versiones: `spec-python/` y `spec-.net/`.
-3. Desarrollar en los forks.
+---
 
-## El reto se desarrolla con React y PHP (Laravel)
+## 🚀 Requisitos y Configuración
 
-El spec está escrito para Python y para .NET, pero el reto **no** se hace en esos lenguajes:
+- **PHP**: 8.1+ (extensiones: `bcmath`, `pdo_mysql`, `mbstring`, `openssl`).
+- **Base de Datos**: MySQL 8.4 LTS (ejecutada mediante Docker Compose en `infra/`).
+- **Composer**: 2.x.
 
-| Capa | Tecnología del reto |
-|---|---|
-| Frontend | React |
-| Backend | PHP con Laravel |
+### Variables de Entorno (.env)
+Copie el archivo de ejemplo y configure la conexión MySQL:
+```bash
+cp .env.example .env
+php artisan key:generate
+```
 
-Lo que el spec define sobre el negocio —historias, criterios de aceptación, reglas, contrato de la
-API, modelo de datos— se respeta. Lo que define sobre la tecnología se traduce a React y Laravel.
+Parámetros clave de base de datos (`infra/docker-compose.yml`):
+```env
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=stock_flow
+DB_USERNAME=stock_user
+DB_PASSWORD=stock_secret
+```
 
-## La prueba no consiste en escribir el código
+---
 
-El propósito principal es ver la **capacidad de desempeño con SDD** (*Spec-Driven Development*,
-desarrollo guiado por especificación): cómo se lee, se interpreta y se aplica una especificación
-para llevarla a un stack distinto. El código es el medio, no el fin.
+## 🛠️ Ejecución de Migraciones y Semillas
 
-## Arquitectura del Proyecto (Onion Architecture)
+```bash
+# Ejecutar migraciones (5 tablas en singular con 9 CHECKs exactos)
+php artisan migrate
 
-Este backend implementa **Arquitectura Onion (Cebolla)** estricta en Laravel (PHP 8.1+), desacoplando completamente el núcleo de negocio de la infraestructura y el framework.
+# Ejecutar sembrador inicial (5 categorías y usuario administrador)
+php artisan db:seed
+```
 
-Para ver la definición formal de capas, límites, puertos, transacciones desacopladas y contratos, consulta:
-👉 **[ARCHITECTURE.md](ARCHITECTURE.md)**
+---
 
-## Los seis repositorios
+## 🧪 Pruebas Automatizadas
 
-| Repositorio | Qué va ahí |
-|---|---|
-| [`test-simple-stock-flow-docs`](https://github.com/code-sena/test-simple-stock-flow-docs) | El spec: `spec-python/` y `spec-.net/` |
-| [`test-simple-stock-flow-api`](https://github.com/code-sena/test-simple-stock-flow-api) | Backend en PHP (Laravel) |
-| [`test-simple-stock-flow-app`](https://github.com/code-sena/test-simple-stock-flow-app) | Frontend en React |
-| [`test-simple-stock-flow-page`](https://github.com/code-sena/test-simple-stock-flow-page) | Sitio público estático de presentación |
-| [`test-simple-stock-flow-infra`](https://github.com/code-sena/test-simple-stock-flow-infra) | Contenedores, red, volúmenes y motor de base de datos vacío |
-| [`test-simple-stock-flow-tool`](https://github.com/code-sena/test-simple-stock-flow-tool) | Utilidades: sembrador de datos de demostración |
+```bash
+# Ejecutar suite completa de tests de Dominio y Presentación HTTP
+php artisan test
+```
 
+---
+
+## 📡 Endpoints de la API
+
+| Método | Endpoint | Rol Requerido | Descripción |
+|---|---|---|---|
+| `GET` | `/api/health` | Público | Verificación de estado del servicio y DB |
+| `POST` | `/api/auth/login` | Público | Autenticación y obtención de JWT |
+| `POST` | `/api/auth/register-seller` | `admin` | Alta de usuarios vendedores |
+| `GET` | `/api/categories` | Público | Listado de categorías fijas |
+| `GET` | `/api/products` | Público | Búsqueda y paginación de productos |
+| `GET` | `/api/products/{id}` | Público | Detalle de un producto |
+| `POST` | `/api/products` | `admin` | Creación de producto |
+| `PUT` | `/api/products/{id}` | `admin` | Edición de producto |
+| `DELETE` | `/api/products/{id}` | `admin` | Baja lógica de producto (`is_active = 0`) |
+| `POST` | `/api/sales` | `admin`, `seller` | Registro atómico de venta con concurrencia optimista |
+| `GET` | `/api/sales` | `admin`, `seller` | Listado paginado de ventas por rango |
+| `GET` | `/api/sales/{id}` | `admin`, `seller` | Detalle de una venta con cálculo dinámico de total |
+| `GET` | `/api/reports/sales` | `admin` | Reporte consolidado de ventas por rango de fechas |
