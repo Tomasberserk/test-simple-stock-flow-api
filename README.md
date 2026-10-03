@@ -33,6 +33,13 @@ El propósito principal es ver la **capacidad de desempeño con SDD** (*Spec-Dri
 desarrollo guiado por especificación): cómo se lee, se interpreta y se aplica una especificación
 para llevarla a un stack distinto. El código es el medio, no el fin.
 
+## Arquitectura del Proyecto (Onion Architecture)
+
+Este backend implementa **Arquitectura Onion (Cebolla)** estricta en Laravel (PHP 8.1+), desacoplando completamente el núcleo de negocio de la infraestructura y el framework.
+
+Para ver la definición formal de capas, límites, puertos, transacciones desacopladas y contratos, consulta:
+👉 **[ARCHITECTURE.md](ARCHITECTURE.md)**
+
 ## Los seis repositorios
 
 | Repositorio | Qué va ahí |
@@ -43,3 +50,4 @@ para llevarla a un stack distinto. El código es el medio, no el fin.
 | [`test-simple-stock-flow-page`](https://github.com/code-sena/test-simple-stock-flow-page) | Sitio público estático de presentación |
 | [`test-simple-stock-flow-infra`](https://github.com/code-sena/test-simple-stock-flow-infra) | Contenedores, red, volúmenes y motor de base de datos vacío |
 | [`test-simple-stock-flow-tool`](https://github.com/code-sena/test-simple-stock-flow-tool) | Utilidades: sembrador de datos de demostración |
+
