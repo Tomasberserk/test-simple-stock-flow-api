@@ -19,13 +19,18 @@ final class ReportController
 
     public function sales(Request $request): JsonResponse
     {
-        $startDate = $request->query('startDate');
-        $endDate = $request->query('endDate');
+        $startDate = $request->query('from') ?? $request->query('startDate');
+        $endDate = $request->query('to') ?? $request->query('endDate');
 
         if (!is_string($startDate) || !is_string($endDate)) {
             return response()->json([
-                'error' => 'Los parámetros startDate y endDate son requeridos en formato YYYY-MM-DD'
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                'type' => 'about:blank',
+                'title' => 'Parámetros inválidos',
+                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
+                'detail' => 'Los parámetros de rango de fecha (from/to) son requeridos en formato YYYY-MM-DD'
+            ], Response::HTTP_UNPROCESSABLE_ENTITY, [
+                'Content-Type' => 'application/problem+json',
+            ]);
         }
 
         $report = $this->getSalesReport->execute($startDate, $endDate);

@@ -17,12 +17,14 @@ use App\Application\Ports\Inbound\SaleItemView;
 use App\Application\Ports\Inbound\SalesReport;
 use App\Application\Ports\Inbound\SalesReportRow;
 use App\Application\Ports\Inbound\SaleView;
-use App\Application\Ports\Outbound\CategoryRepository;
 use App\Domain\Exception\InvalidCredentialsException;
 use App\Domain\Exception\ProductNotFoundException;
-use App\Domain\Model\Category;
-use App\Domain\ValueObject\CategoryId;
+use App\Domain\ValueObject\Role;
+use App\Domain\ValueObject\UserId;
+use App\Domain\ValueObject\Username;
 use App\Infrastructure\Security\JwtTokenGenerator;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Mockery;
 use Tests\TestCase;
 
@@ -39,9 +41,9 @@ final class ApiEndpointsTest extends TestCase
     private function generateToken(string $role, string $userId = '11111111-1111-4111-8111-111111111111', string $username = 'admin'): string
     {
         $auth = $this->tokenGenerator->generate(
-            \App\Domain\ValueObject\UserId::fromString($userId),
-            new \App\Domain\ValueObject\Username($username),
-            new \App\Domain\ValueObject\Role($role)
+            UserId::fromString($userId),
+            new Username($username),
+            new Role($role)
         );
         return $auth->token;
     }
@@ -49,7 +51,7 @@ final class ApiEndpointsTest extends TestCase
     public function test_health_check_endpoint(): void
     {
         $response = $this->getJson('/api/health');
-        $response->assertStatus(503) // DB not connected in test environment
+        $response->assertStatus(503) // DB desconectada en entorno de pruebas sin contenedor MySQL
             ->assertJson([
                 'status' => 'degraded',
                 'service' => 'simple-stock-flow-api',
@@ -57,14 +59,14 @@ final class ApiEndpointsTest extends TestCase
             ]);
     }
 
-    public function test_categories_endpoint(): void
+    public function test_categories_endpoint_uses_inbound_port(): void
     {
-        $mockRepo = Mockery::mock(CategoryRepository::class);
-        $mockRepo->shouldReceive('findAll')->once()->andReturn([
-            new Category(CategoryId::fromString('11111111-1111-4111-8111-111111111111'), 'Herramientas'),
-            new Category(CategoryId::fromString('22222222-2222-4222-8222-222222222222'), 'Pinturas'),
+        $mockProducts = Mockery::mock(ManageProducts::class);
+        $mockProducts->shouldReceive('listCategories')->once()->andReturn([
+            ['id' => '11111111-1111-4111-8111-111111111111', 'name' => 'Herramientas'],
+            ['id' => '22222222-2222-4222-8222-222222222222', 'name' => 'Pinturas'],
         ]);
-        $this->app->instance(CategoryRepository::class, $mockRepo);
+        $this->app->instance(ManageProducts::class, $mockProducts);
 
         $response = $this->getJson('/api/categories');
         $response->assertStatus(200)
@@ -74,11 +76,11 @@ final class ApiEndpointsTest extends TestCase
             ]);
     }
 
-    public function test_login_validation_failure(): void
+    public function test_login_validation_failure_returns_400(): void
     {
         $response = $this->postJson('/api/auth/login', []);
-        $response->assertStatus(422)
-            ->assertJsonStructure(['error', 'errors']);
+        $response->assertStatus(400)
+            ->assertJsonStructure(['title', 'status', 'detail', 'errors']);
     }
 
     public function test_login_success(): void
@@ -87,7 +89,7 @@ final class ApiEndpointsTest extends TestCase
         $mockAuth->shouldReceive('login')->with('admin', 'secret123')->once()->andReturn(
             new AuthResult(
                 token: 'mock-jwt-token',
-                expiresAt: '2026-10-03T20:00:00.000Z',
+                expiresAt: '2026-10-09T20:00:00.000Z',
                 userId: '11111111-1111-4111-8111-111111111111',
                 username: 'admin',
                 role: 'admin'
@@ -108,7 +110,7 @@ final class ApiEndpointsTest extends TestCase
             ]);
     }
 
-    public function test_login_invalid_credentials_returns_401(): void
+    public function test_login_invalid_credentials_returns_empty_401(): void
     {
         $mockAuth = Mockery::mock(Authenticate::class);
         $mockAuth->shouldReceive('login')->andThrow(new InvalidCredentialsException('Credenciales inválidas'));
@@ -119,8 +121,46 @@ final class ApiEndpointsTest extends TestCase
             'password' => 'wrongpass',
         ]);
 
-        $response->assertStatus(401)
-            ->assertJson(['error' => 'Credenciales inválidas']);
+        $response->assertStatus(401);
+        $this->assertEmpty($response->getContent());
+        $response->assertHeader('WWW-Authenticate');
+    }
+
+    public function test_register_seller_endpoint_requires_admin(): void
+    {
+        // Sin token -> 401 vacío
+        $unauth = $this->postJson('/api/auth/register', [
+            'username' => 'carlos',
+            'password' => 'secret123',
+        ]);
+        $unauth->assertStatus(401);
+        $this->assertEmpty($unauth->getContent());
+
+        // Con token admin -> 201
+        $adminToken = $this->generateToken('admin');
+        $mockAuth = Mockery::mock(Authenticate::class);
+        $mockAuth->shouldReceive('registerSeller')->with('carlos', 'secret123')->once()->andReturn(
+            new AuthResult(
+                token: 'seller-jwt-token',
+                expiresAt: '2026-10-09T20:00:00.000Z',
+                userId: '22222222-2222-4222-8222-222222222222',
+                username: 'carlos',
+                role: 'seller'
+            )
+        );
+        $this->app->instance(Authenticate::class, $mockAuth);
+
+        $response = $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->postJson('/api/auth/register', [
+                'username' => 'carlos',
+                'password' => 'secret123',
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJson([
+                'username' => 'carlos',
+                'role' => 'seller',
+            ]);
     }
 
     public function test_products_list_public(): void
@@ -160,20 +200,24 @@ final class ApiEndpointsTest extends TestCase
             ]);
     }
 
-    public function test_create_product_requires_admin(): void
+    public function test_create_product_requires_admin_empty_bodies(): void
     {
-        // Sin token -> 401
-        $this->postJson('/api/products', [])->assertStatus(401);
+        // Sin token -> 401 vacío
+        $res401 = $this->postJson('/api/products', []);
+        $res401->assertStatus(401);
+        $this->assertEmpty($res401->getContent());
 
-        // Con token seller -> 403
+        // Con token seller -> 403 vacío
         $sellerToken = $this->generateToken('seller');
-        $this->withHeader('Authorization', "Bearer {$sellerToken}")
+        $res403 = $this->withHeader('Authorization', "Bearer {$sellerToken}")
             ->postJson('/api/products', [
                 'name' => 'Taladro',
                 'price' => 100,
                 'stock' => 5,
                 'categoryId' => '11111111-1111-4111-8111-111111111111',
-            ])->assertStatus(403);
+            ]);
+        $res403->assertStatus(403);
+        $this->assertEmpty($res403->getContent());
     }
 
     public function test_create_product_success_with_admin(): void
@@ -210,6 +254,37 @@ final class ApiEndpointsTest extends TestCase
             ]);
     }
 
+    public function test_upload_product_image_endpoint(): void
+    {
+        Storage::fake('public');
+        $adminToken = $this->generateToken('admin');
+
+        $mockProducts = Mockery::mock(ManageProducts::class);
+        $mockProducts->shouldReceive('uploadImage')->once()->andReturn(
+            new ProductView(
+                id: '44444444-4444-4444-8444-444444444444',
+                name: 'Taladro',
+                price: '120.00',
+                stock: 5,
+                categoryId: '11111111-1111-4111-8111-111111111111',
+                imageKey: 'abc-123.jpg'
+            )
+        );
+        $this->app->instance(ManageProducts::class, $mockProducts);
+
+        $file = UploadedFile::fake()->image('taladro.jpg');
+
+        $response = $this->withHeader('Authorization', "Bearer {$adminToken}")
+            ->postJson('/api/products/44444444-4444-4444-8444-444444444444/image', [
+                'image' => $file,
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'imageKey' => 'abc-123.jpg',
+            ]);
+    }
+
     public function test_place_sale_success_with_seller(): void
     {
         $sellerToken = $this->generateToken('seller', username: 'carlos');
@@ -218,7 +293,7 @@ final class ApiEndpointsTest extends TestCase
         $mockSale->shouldReceive('execute')->once()->andReturn(
             new SaleView(
                 id: '55555555-5555-4555-8555-555555555555',
-                soldAt: '2026-10-03T17:00:00.000Z',
+                soldAt: '2026-10-09T17:00:00.000Z',
                 soldByUserId: '11111111-1111-4111-8111-111111111111',
                 soldBy: 'carlos',
                 items: [
@@ -255,7 +330,7 @@ final class ApiEndpointsTest extends TestCase
             ]);
     }
 
-    public function test_concurrency_conflict_returns_409(): void
+    public function test_concurrency_conflict_returns_problem_details_409(): void
     {
         $sellerToken = $this->generateToken('seller');
 
@@ -274,15 +349,20 @@ final class ApiEndpointsTest extends TestCase
             ]);
 
         $response->assertStatus(409)
-            ->assertJson(['error' => 'Conflicto de concurrencia']);
+            ->assertHeader('Content-Type', 'application/problem+json')
+            ->assertJson([
+                'status' => 409,
+                'detail' => 'Conflicto de concurrencia',
+            ]);
     }
 
-    public function test_sales_report_requires_admin(): void
+    public function test_sales_report_requires_admin_and_supports_from_to(): void
     {
         $sellerToken = $this->generateToken('seller');
-        $this->withHeader('Authorization', "Bearer {$sellerToken}")
-            ->getJson('/api/reports/sales?startDate=2026-10-01&endDate=2026-10-31')
-            ->assertStatus(403);
+        $res403 = $this->withHeader('Authorization', "Bearer {$sellerToken}")
+            ->getJson('/api/reports/sales?from=2026-10-01&to=2026-10-31');
+        $res403->assertStatus(403);
+        $this->assertEmpty($res403->getContent());
 
         $adminToken = $this->generateToken('admin');
         $mockReport = Mockery::mock(GetSalesReport::class);
@@ -306,7 +386,7 @@ final class ApiEndpointsTest extends TestCase
         $this->app->instance(GetSalesReport::class, $mockReport);
 
         $response = $this->withHeader('Authorization', "Bearer {$adminToken}")
-            ->getJson('/api/reports/sales?startDate=2026-10-01&endDate=2026-10-31');
+            ->getJson('/api/reports/sales?from=2026-10-01&to=2026-10-31');
 
         $response->assertStatus(200)
             ->assertJson([
