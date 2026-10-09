@@ -1,18 +1,23 @@
 <?php
 
+declare(strict_types=1);
+
+use App\Presentation\Http\Controllers\HealthController;
+use App\Presentation\Http\Controllers\MediaController;
 use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| Web Routes
+| Web Routes — Simple Stock Flow
 |--------------------------------------------------------------------------
-|
-| Here is where you can register web routes for your application. These
-| routes are loaded by the RouteServiceProvider and all of them will
-| be assigned to the "web" middleware group. Make something great!
-|
 */
 
 Route::get('/', function () {
-    return view('welcome');
+    return response()->json(['service' => 'simple-stock-flow-api', 'status' => 'running']);
 });
+
+// E-14: GET /health (anónimo)
+Route::get('/health', [HealthController::class, 'check']);
+
+// E-15: GET /media/{key} (anónimo)
+Route::get('/media/{key}', [MediaController::class, 'show']);

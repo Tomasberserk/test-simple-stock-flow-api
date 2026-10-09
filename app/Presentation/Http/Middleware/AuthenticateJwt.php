@@ -15,18 +15,20 @@ final class AuthenticateJwt
     {
         $header = $request->header('Authorization');
         if ($header === null || !str_starts_with($header, 'Bearer ')) {
-            return response()->json([
-                'error' => 'No autorizado. Se requiere un token de sesión válido'
-            ], Response::HTTP_UNAUTHORIZED);
+            return response('', Response::HTTP_UNAUTHORIZED, [
+                'WWW-Authenticate' => 'Bearer',
+                'Content-Length' => '0',
+            ]);
         }
 
         $token = substr($header, 7);
         $payload = JwtTokenGenerator::decodeJwt($token);
 
         if ($payload === null) {
-            return response()->json([
-                'error' => 'Token inválido o expirado'
-            ], Response::HTTP_UNAUTHORIZED);
+            return response('', Response::HTTP_UNAUTHORIZED, [
+                'WWW-Authenticate' => 'Bearer error="invalid_token"',
+                'Content-Length' => '0',
+            ]);
         }
 
         // Adjuntar datos del usuario a la petición

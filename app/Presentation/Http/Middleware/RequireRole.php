@@ -18,9 +18,9 @@ final class RequireRole
         $currentRole = $request->attributes->get('auth_role');
 
         if ($currentRole === null || !in_array($currentRole, $roles, true)) {
-            return response()->json([
-                'error' => 'Acceso denegado. Permisos insuficientes'
-            ], Response::HTTP_FORBIDDEN);
+            return response('', Response::HTTP_FORBIDDEN, [
+                'Content-Length' => '0',
+            ]);
         }
 
         return $next($request);

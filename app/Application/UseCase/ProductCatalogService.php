@@ -9,6 +9,7 @@ use App\Application\Ports\Inbound\ManageProducts;
 use App\Application\Ports\Inbound\PagedResult;
 use App\Application\Ports\Inbound\ProductView;
 use App\Application\Ports\Outbound\CategoryRepository;
+use App\Application\Ports\Outbound\FileStorage;
 use App\Application\Ports\Outbound\ProductRepository;
 use App\Domain\Exception\ProductNotFoundException;
 use App\Domain\Exception\UnknownCategoryException;
@@ -21,7 +22,8 @@ final class ProductCatalogService implements ManageProducts
 {
     public function __construct(
         private readonly ProductRepository $productRepository,
-        private readonly CategoryRepository $categoryRepository
+        private readonly CategoryRepository $categoryRepository,
+        private readonly FileStorage $fileStorage
     ) {}
 
     public function listProducts(?string $query, ?string $categoryId, int $page = 1, int $perPage = 20): PagedResult
@@ -99,14 +101,13 @@ final class ProductCatalogService implements ManageProducts
 
     public function updateProduct(string $id, string $name, string $price, int $stock, string $categoryId, ?string $imageKey = null): ProductView
     {
-        $prodId = ProductId::fromString($id);
-        $product = $this->productRepository->findById($prodId);
+        $product = $this->productRepository->findById(ProductId::fromString($id));
         if ($product === null) {
             throw new ProductNotFoundException("El producto solicitado no existe");
         }
 
         $catId = CategoryId::fromString($categoryId);
-        if (!$product->getCategoryId()->equals($catId)) {
+        if (!$catId->equals($product->getCategoryId())) {
             $category = $this->categoryRepository->findById($catId);
             if ($category === null) {
                 throw new UnknownCategoryException("La categoría especificada no existe");
@@ -141,5 +142,40 @@ final class ProductCatalogService implements ManageProducts
         }
 
         $this->productRepository->softDelete($prodId);
+    }
+
+    public function listCategories(): array
+    {
+        $categories = $this->categoryRepository->findAll();
+
+        return array_map(function ($cat) {
+            return [
+                'id' => $cat->getId()->getValue(),
+                'name' => $cat->getName(),
+            ];
+        }, $categories);
+    }
+
+    public function uploadImage(string $productId, string $content, string $extension): ProductView
+    {
+        $prodId = ProductId::fromString($productId);
+        $product = $this->productRepository->findById($prodId);
+        if ($product === null) {
+            throw new ProductNotFoundException("El producto solicitado no existe");
+        }
+
+        $key = $this->fileStorage->store($content, $extension);
+        $product->attachImage($key);
+
+        $this->productRepository->update($product);
+
+        return new ProductView(
+            id: $product->getId()->getValue(),
+            name: $product->getName(),
+            price: $product->getPrice()->getAmountString(),
+            stock: $product->getStock(),
+            categoryId: $product->getCategoryId()->getValue(),
+            imageKey: $product->getImageKey()
+        );
     }
 }

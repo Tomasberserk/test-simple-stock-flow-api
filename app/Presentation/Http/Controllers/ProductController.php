@@ -39,14 +39,12 @@ final class ProductController
         ], Response::HTTP_OK);
     }
 
-    public function show(string $id): JsonResponse
+    public function show(string $id): JsonResponse|\Illuminate\Http\Response
     {
         $product = $this->manageProducts->getProductById($id);
 
         if ($product === null) {
-            return response()->json([
-                'error' => 'Producto no encontrado'
-            ], Response::HTTP_NOT_FOUND);
+            return response('', Response::HTTP_NOT_FOUND, ['Content-Length' => '0']);
         }
 
         return response()->json(self::formatProduct($product), Response::HTTP_OK);
@@ -116,6 +114,24 @@ final class ProductController
         $this->manageProducts->deleteProduct($id);
 
         return response()->json(null, Response::HTTP_NO_CONTENT);
+    }
+
+    public function uploadImage(Request $request, string $id): JsonResponse
+    {
+        $request->validate([
+            'image' => 'required|file|image|max:5120',
+        ], [
+            'image.required' => 'El archivo de imagen es obligatorio',
+            'image.image' => 'El archivo debe ser una imagen válida',
+        ]);
+
+        $file = $request->file('image');
+        $content = file_get_contents($file->getRealPath());
+        $extension = $file->getClientOriginalExtension() ?: 'jpg';
+
+        $product = $this->manageProducts->uploadImage($id, $content, $extension);
+
+        return response()->json(self::formatProduct($product), Response::HTTP_OK);
     }
 
     private static function formatProduct(ProductView $p): array

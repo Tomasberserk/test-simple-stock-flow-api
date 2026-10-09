@@ -80,14 +80,12 @@ final class SaleController
         ], Response::HTTP_OK);
     }
 
-    public function show(string $id): JsonResponse
+    public function show(string $id): JsonResponse|\Illuminate\Http\Response
     {
         $sale = $this->getSales->getSaleById($id);
 
         if ($sale === null) {
-            return response()->json([
-                'error' => 'Venta no encontrada'
-            ], Response::HTTP_NOT_FOUND);
+            return response('', Response::HTTP_NOT_FOUND, ['Content-Length' => '0']);
         }
 
         return response()->json(self::formatSale($sale), Response::HTTP_OK);

@@ -15,4 +15,11 @@ interface ManageProducts
     public function updateProduct(string $id, string $name, string $price, int $stock, string $categoryId, ?string $imageKey = null): ProductView;
 
     public function deleteProduct(string $id): void;
+
+    /**
+     * @return array<int, array{id: string, name: string}>
+     */
+    public function listCategories(): array;
+
+    public function uploadImage(string $productId, string $content, string $extension): ProductView;
 }
